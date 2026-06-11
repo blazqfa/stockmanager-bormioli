@@ -254,6 +254,9 @@ tr.al1 td{background:var(--al1-bg)!important;} tr.al2 td{background:var(--al2-bg
 
 <div class="main">
   <div class="kpi-bar" id="kpi-bar"></div>
+  <div id="cob-search-bar" style="display:none;padding:8px 16px 0">
+    <input id="cob-search-inp" type="text" placeholder="Buscar codigo, Trade Name..." style="width:240px" autocomplete="off">
+  </div>
   <div id="view-container"></div>
 </div>
 
@@ -528,6 +531,9 @@ function renderKPI(){
 function showTab(tab){
   currentTab=tab;page=1;
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['todos','cobertura','config'][i]===tab));
+  var sb=document.getElementById('cob-search-bar');
+  if(sb)sb.style.display=tab==='cobertura'?'flex':'none';
+  if(tab!=='cobertura')cobFilterTxt='';
   render();
 }
 function render(){
@@ -1361,7 +1367,8 @@ function renderCobertura(){
   var out='';
   // Top bar
   out+='<div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
-  out+='<input type="text" placeholder="Buscar codigo, Trade Name..." value="'+cobFilterTxt+'" id="cob-search-inp" oninput="cobFilterTxt=this.value;cobDebouncedRender()" style="width:210px">';
+  // search input is persistent (outside render) - just sync value
+  var _si=document.getElementById('cob-search-inp');if(_si&&document.activeElement!==_si)_si.value=cobFilterTxt;
   out+='<div style="display:flex;align-items:center;gap:5px;padding-left:10px;border-left:1px solid var(--border)">';
   out+='<span style="font-size:11px;color:var(--text2);font-weight:600">Objetivo:</span>';
   out+='<input class="cob-config-inp" type="number" min="1" max="36" value="'+cobTargetMeses+'" oninput="cobTargetMeses=parseFloat(this.value)||6;render()" style="width:52px">';
@@ -1481,6 +1488,14 @@ function renderCobertura(){
   });
   out+='</tbody></table></div>';
   document.getElementById('view-container').innerHTML=out;
+  // Show persistent search bar and wire event
+  var _sb=document.getElementById('cob-search-bar');
+  if(_sb){_sb.style.display='flex';_sb.style.alignItems='center';_sb.style.gap='8px';}
+  var _sinp=document.getElementById('cob-search-inp');
+  if(_sinp&&!_sinp._wired){
+    _sinp._wired=true;
+    _sinp.addEventListener('input',function(){cobFilterTxt=this.value;render();});
+  }
   // Attach sort and filter handlers
   document.querySelectorAll('#view-container th[data-sort]').forEach(function(th){
     th.addEventListener('click',function(e){
