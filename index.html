@@ -273,6 +273,30 @@ let cobFilterTxt='';
 let cobTargetMeses=6;
 let cobSortCol='mat',cobSortDir=1;
 let cobColFilters={};
+let cobRenderTimer=null;
+function cobDebouncedRender(){
+  clearTimeout(cobRenderTimer);
+  cobRenderTimer=setTimeout(function(){
+    render();
+    var inp=document.getElementById('cob-search-inp');
+    if(inp){var pos=inp.value.length;inp.focus();try{inp.setSelectionRange(pos,pos);}catch(e){}}
+  },150);
+}
+// Reparto manual de provisionales entre definitivos del mismo TN
+let repartoManual={};
+// Vajillas: cod -> {desc, componentes:[{tn,desc,qty}]}
+let vajillas={
+  '490450SVH021990':{desc:'PROMETEO SET 18 PZ',componentes:[{tn:'490400',desc:'PROMETEO PLATO LLANO 27X24',qty:6},{tn:'490410',desc:'PROMETEO PLATO HONDO 23X20',qty:6},{tn:'490420',desc:'PROMETEO PLATO POSTRE 22X19',qty:6}]},
+  '498930SBA021990':{desc:'PARMA TAVOLA SET 18 PZ',componentes:[{tn:'498860',desc:'PARMA PLATO LLANO 27',qty:6},{tn:'498870',desc:'PARMA PLATO HONDO 23',qty:6},{tn:'498880',desc:'PARMA PLATO POSTRE 20',qty:6}]},
+  '422315SAU021990':{desc:'COCONUT SET 18 PZ',componentes:[{tn:'422310',desc:'COCONUT PIATTO PIANO 27',qty:6},{tn:'422311',desc:'COCONUT PIATTO FONDO 20',qty:6},{tn:'422312',desc:'COCONUT PIATTO DESSERT 21',qty:6}]},
+  '403886SBA021990':{desc:'PRIMA NEW SET 18 PZ',componentes:[{tn:'403812',desc:'PRIMA PLATO POSTRE 20',qty:6},{tn:'403884',desc:'PRIMA PLATO LLANO 26',qty:6},{tn:'403885',desc:'PRIMA PLATO HONDO 23',qty:6}]},
+  '402404SVF021990':{desc:'EBRO SET 19 PZ',componentes:[{tn:'402810',desc:'EBRO PLATO LLANO',qty:6},{tn:'402811',desc:'EBRO PLATO HONDO',qty:6},{tn:'402812',desc:'EBRO PLATO POSTRE',qty:6},{tn:'402879',desc:'EBRO ENSALADERA 23',qty:1}]},
+  '400869SAU021990':{desc:'TOLEDO SET 18 PZ',componentes:[{tn:'400810',desc:'TOLEDO P.TO PIANO 25',qty:6},{tn:'400811',desc:'TOLEDO P.TO FONDO 23',qty:6},{tn:'400812',desc:'TOLEDO P.TO FRUTTA 20',qty:6}]},
+  '498996SBA021990':{desc:'PARMA SET 19 PZ',componentes:[{tn:'498860',desc:'PARMA PLATO LLANO 27',qty:6},{tn:'498870',desc:'PARMA PLATO HONDO 23',qty:6},{tn:'498880',desc:'PARMA PLATO POSTRE 20',qty:6},{tn:'498910',desc:'PARMA ENSALADERA 24',qty:1}]},
+  '480240SAT021990':{desc:'W MOON SET 18 PZ',componentes:[{tn:'480170',desc:'WHITE MOON PLATO LLANO 27',qty:6},{tn:'480180',desc:'WHITE MOON PLATO HONDO 23',qty:6},{tn:'480190',desc:'WHITE MOON PLATO POSTRE 20',qty:6}]},
+  '460653SAP021990':{desc:'W MOON SET 12 PZ',componentes:[{tn:'480170',desc:'WHITE MOON PLATO LLANO 27',qty:6},{tn:'480180',desc:'WHITE MOON PLATO HONDO 23',qty:6}]},
+  '400875SVR021990':{desc:'TOLEDO SET 19 PZ',componentes:[{tn:'400810',desc:'TOLEDO P.TO PIANO 25',qty:6},{tn:'400811',desc:'TOLEDO P.TO FONDO 23',qty:6},{tn:'400812',desc:'TOLEDO P.TO FRUTTA 20',qty:6},{tn:'400880',desc:'TOLEDO ENSALADERA 23',qty:1}]}
+};
 let page=1,pageSize=50;
 let openDropdown=null;
 let pasteRows=[{mat:'',desc:'',qty:''}];
@@ -1308,12 +1332,13 @@ function renderCobertura(){
   var allDefRows=[];
   tnKeys.forEach(function(tn){
     var g=tnGroups[tn];
-    var provOK2=g.provs.reduce(function(s,a){return s+a.ok;},0);
-    var provKO2=g.provs.reduce(function(s,a){return s+a.ko;},0);
     var mtsDefs2=g.defs.filter(function(d){return d.mto==='MTS';});
     mtsDefs2.forEach(function(a,ai){
       var ped=pedByMat[a.mat]?pedByMat[a.mat].totalQty:0;
       var cob=a.media>0?a.ok/a.media:null;
+      // Use proportional/manual reparto for this specific definitivo
+      var asig=getProvAsignados(tnGroups,tn,a.mat);
+      var provOK2=asig.ok,provKO2=asig.ko;
       if(cobRowMatchesFilters(a,tn,ped,cob))
         allDefRows.push({a:a,tn:tn,g:g,ai:ai,ped:ped,cob:cob,provOK:provOK2,provKO:provKO2,provTotal:provOK2+provKO2});
     });
@@ -1336,7 +1361,7 @@ function renderCobertura(){
   var out='';
   // Top bar
   out+='<div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
-  out+='<input type="text" placeholder="Buscar codigo, Trade Name..." value="'+cobFilterTxt+'" oninput="cobFilterTxt=this.value;render()" style="width:210px">';
+  out+='<input type="text" placeholder="Buscar codigo, Trade Name..." value="'+cobFilterTxt+'" id="cob-search-inp" oninput="cobFilterTxt=this.value;cobDebouncedRender()" style="width:210px">';
   out+='<div style="display:flex;align-items:center;gap:5px;padding-left:10px;border-left:1px solid var(--border)">';
   out+='<span style="font-size:11px;color:var(--text2);font-weight:600">Objetivo:</span>';
   out+='<input class="cob-config-inp" type="number" min="1" max="36" value="'+cobTargetMeses+'" oninput="cobTargetMeses=parseFloat(this.value)||6;render()" style="width:52px">';
@@ -1511,49 +1536,166 @@ function cobThW(col,label,w,align){
 
 
 function renderConfig(){
-  var mats={};
-  getAllRows().forEach(function(r){mats[r.mat]=r.desc;});
-  var matKeys=Object.keys(mats).sort();
-  document.getElementById('view-container').innerHTML=
-    '<div class="config-section"><h3>Alertas de cobertura</h3>'+
-    '<div class="alert-config">'+
-    '<div class="alert-row-cfg a3"><div class="alert-dot"></div><span class="alert-label-txt">Critico - cobertura por debajo de</span>'+
-    '<input type="text" class="alert-inp" id="inp-a1" value="'+alertas.a1+'" oninput="alertas.a1=parseFloat(this.value)||3;renderKPI()">'+
-    '<span class="alert-unit">meses</span></div>'+
-    '<div class="alert-row-cfg a2"><div class="alert-dot"></div><span class="alert-label-txt">Precaucion - cobertura entre</span>'+
-    '<input type="text" class="alert-inp" value="'+alertas.a1+'" oninput="alertas.a1=parseFloat(this.value)||3;renderKPI()">'+
-    '<span class="alert-unit">y</span>'+
-    '<input type="text" class="alert-inp" id="inp-a2" value="'+alertas.a2+'" oninput="alertas.a2=parseFloat(this.value)||6;renderKPI()">'+
-    '<span class="alert-unit">meses</span></div>'+
-    '<div class="alert-row-cfg a1"><div class="alert-dot"></div><span class="alert-label-txt">Aviso - cobertura entre</span>'+
-    '<input type="text" class="alert-inp" value="'+alertas.a2+'" oninput="alertas.a2=parseFloat(this.value)||6;renderKPI()">'+
-    '<span class="alert-unit">y</span>'+
-    '<input type="text" class="alert-inp" id="inp-a3" value="'+alertas.a3+'" oninput="alertas.a3=parseFloat(this.value)||9;renderKPI()">'+
-    '<span class="alert-unit">meses</span></div>'+
-    '</div></div>'+
-    '<div class="config-section"><h3>Stock de seguridad por articulo</h3>'+
-    '<div class="seg-toolbar">'+
-    '<input type="text" id="seg-search" placeholder="Buscar articulo..." style="width:200px" oninput="renderSegSearch(this.value)">'+
-    '<button class="btn btn-primary" onclick="addSegRow()">+ Anadir linea</button>'+
-    '<button class="btn" onclick="exportSegExcel()">&#8595; Exportar</button>'+
-    '</div>'+
-    '<div class="seg-grid" id="seg-grid">'+
-    (Object.keys(stockSeguridad).length===0?'<div style="padding:16px;color:var(--text2);font-size:12px">No hay articulos anadidos.</div>':
-    Object.keys(stockSeguridad).sort().map(function(mat){return segItemHtml(mat,mats[mat]||'');}).join(''))+
-    '</div></div>'+
-    '<div class="config-section"><h3>Importar stock de seguridad</h3>'+
-    '<p style="font-size:12px;color:var(--text2);margin-bottom:10px">Pega desde Excel: Cod. Articulo, Descripcion, Qty, Pz</p>'+
-    '<div class="paste-area"><div class="paste-area-header"><span>Vista previa</span>'+
-    '<button class="btn" style="margin-left:auto;font-size:11px;padding:3px 10px" onclick="addPasteRow()">+ Fila</button></div>'+
-    '<div class="paste-table-wrap"><table class="paste-table" id="paste-table">'+
-    '<thead><tr><th style="width:150px">Cod. Articulo</th><th>Descripcion</th><th style="width:90px">Qty</th><th style="width:80px">Pz</th><th style="width:30px"></th></tr></thead>'+
-    '<tbody id="paste-tbody"></tbody></table></div></div>'+
-    '<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'+
-    '<button class="btn btn-primary" onclick="applyPaste()">&#10004; Agregar a los datos</button>'+
-    '<button class="btn" onclick="clearPaste()">Limpiar</button>'+
-    '</div></div>';
+  var mats={};getAllRows().forEach(function(r){mats[r.mat]=r.desc;});
+  var html2='';
+
+  // === ALERTAS ===
+  html2+='<div class="config-section"><h3>Alertas de cobertura</h3>';
+  html2+='<div class="alert-config">';
+  html2+='<div class="alert-row-cfg a3"><div class="alert-dot"></div><span class="alert-label-txt">Critico &mdash; cobertura por debajo de</span><input type="text" class="alert-inp" id="inp-a1" value="'+alertas.a1+'" oninput="alertas.a1=parseFloat(this.value)||3;renderKPI()"><span class="alert-unit">meses</span></div>';
+  html2+='<div class="alert-row-cfg a2"><div class="alert-dot"></div><span class="alert-label-txt">Precaucion &mdash; entre</span><input type="text" class="alert-inp" value="'+alertas.a1+'" oninput="alertas.a1=parseFloat(this.value)||3;renderKPI()"><span class="alert-unit">y</span><input type="text" class="alert-inp" id="inp-a2" value="'+alertas.a2+'" oninput="alertas.a2=parseFloat(this.value)||6;renderKPI()"><span class="alert-unit">meses</span></div>';
+  html2+='<div class="alert-row-cfg a1"><div class="alert-dot"></div><span class="alert-label-txt">Aviso &mdash; entre</span><input type="text" class="alert-inp" value="'+alertas.a2+'" oninput="alertas.a2=parseFloat(this.value)||6;renderKPI()"><span class="alert-unit">y</span><input type="text" class="alert-inp" id="inp-a3" value="'+alertas.a3+'" oninput="alertas.a3=parseFloat(this.value)||9;renderKPI()"><span class="alert-unit">meses</span></div>';
+  html2+='</div></div>';
+
+  // === REPARTO DE PROVISIONALES ===
+  html2+='<div class="config-section"><h3>Reparto de provisionales por Trade Name</h3>';
+  html2+='<p style="font-size:12px;color:var(--text2);margin-bottom:10px">Cuando un Trade Name tiene varios articulos definitivos, el stock provisional se reparte proporcionalmente a la media mensual de cada codigo. Aqui puedes forzar un porcentaje manual o reasignar todo a un codigo.</p>';
+  var tnGrp={};
+  getAZQ().forEach(function(a){
+    if(!tnGrp[a.tn])tnGrp[a.tn]={defs:[],provs:[]};
+    if(a.tipo==='DEFINITIVO'&&a.mto==='MTS')tnGrp[a.tn].defs.push(a);
+    else if(a.tipo==='PROVISIONAL')tnGrp[a.tn].provs.push(a);
+  });
+  var multiTNs=Object.keys(tnGrp).filter(function(tn){return tnGrp[tn].defs.length>1&&tnGrp[tn].provs.length>0;}).sort();
+  if(multiTNs.length===0){
+    html2+='<p style="font-size:12px;color:var(--text3)">No hay Trade Names con multiples definitivos y provisionales actualmente.</p>';
+  }else{
+    multiTNs.forEach(function(tn){
+      var g=tnGrp[tn];
+      var totalMedia=g.defs.reduce(function(s,a){return s+a.media;},0);
+      var provOK=g.provs.reduce(function(s,a){return s+a.ok;},0);
+      var provKO=g.provs.reduce(function(s,a){return s+a.ko;},0);
+      var rm=repartoManual[tn]||{};
+      html2+='<div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:12px 16px;margin-bottom:12px">';
+      html2+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+      html2+='<span style="font-family:DM Mono,monospace;font-size:13px;font-weight:700;color:var(--bl-blue)">TN '+tn+'</span>';
+      html2+='<span style="font-size:11px;color:var(--text2)">'+g.defs.length+' definitivos &middot; Prov.OK: '+fmtNum(provOK)+' KO: '+fmtNum(provKO)+'</span>';
+      html2+='<button class="btn" style="margin-left:auto;font-size:10px;padding:3px 8px" data-tn="'+tn+'" onclick="resetRepartoTN(this.dataset.tn)">Restablecer proporcional</button>';
+      html2+='</div>';
+      html2+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--bg3)">';
+      html2+='<th style="padding:5px 8px;text-align:left">Codigo</th><th style="padding:5px 8px;text-align:left">Descripcion</th>';
+      html2+='<th style="padding:5px 8px;text-align:right">Media/mes</th><th style="padding:5px 8px;text-align:right">% proporcional</th>';
+      html2+='<th style="padding:5px 8px;text-align:center">% manual</th><th style="padding:5px 8px;text-align:right">Prov.OK asignado</th>';
+      html2+='<th style="padding:5px 8px;text-align:center">Reasignar todo</th></tr></thead><tbody>';
+      g.defs.forEach(function(a){
+        var pctProp=totalMedia>0?Math.round(a.media/totalMedia*100):Math.round(100/g.defs.length);
+        var pctManual=rm[a.mat]!==undefined?rm[a.mat]:null;
+        var pctUsed=pctManual!==null?pctManual:pctProp;
+        var provAsig=Math.round(provOK*pctUsed/100);
+        html2+='<tr style="border-top:1px solid var(--border)">';
+        html2+='<td class="mono" style="padding:5px 8px;color:var(--bl-blue);font-size:10px;font-weight:600">'+a.mat+'</td>';
+        html2+='<td style="padding:5px 8px;font-size:11px">'+a.desc+'</td>';
+        html2+='<td class="mono" style="padding:5px 8px;text-align:right">'+fmtNum(a.media)+'</td>';
+        html2+='<td class="mono" style="padding:5px 8px;text-align:right;color:var(--text2)">'+pctProp+'%</td>';
+        html2+='<td style="padding:5px 8px;text-align:center"><input type="number" min="0" max="100" value="'+(pctManual!==null?pctManual:'')+'" placeholder="'+pctProp+'" style="width:55px;text-align:center" data-tn="'+tn+'" data-mat="'+a.mat+'" oninput="setRepartoManual(this.dataset.tn,this.dataset.mat,this.value)"><span style="font-size:9px;color:var(--text3)">%</span></td>';
+        html2+='<td class="mono" style="padding:5px 8px;text-align:right;color:'+(pctManual!==null?'var(--warn)':'var(--c-green)')+';font-weight:600">'+fmtNum(provAsig)+'</td>';
+        html2+='<td style="padding:5px 8px;text-align:center"><button class="btn" style="font-size:9px;padding:2px 7px" data-tn="'+tn+'" data-mat="'+a.mat+'" onclick="reasignarTodo(this.dataset.tn,this.dataset.mat)">Todo aqui</button></td>';
+        html2+='</tr>';
+      });
+      html2+='</tbody></table></div>';
+    });
+  }
+  html2+='</div>';
+
+  // === VAJILLAS ===
+  html2+='<div class="config-section"><h3>Vajillas &mdash; Composicion y stock disponible</h3>';
+  html2+='<p style="font-size:12px;color:var(--text2);margin-bottom:10px">Stock disponible por vajilla (limitado por el componente con menos stock). Se puede anadir, editar o eliminar vajillas.</p>';
+  html2+='<div style="margin-bottom:10px;display:flex;gap:8px"><button class="btn btn-primary" onclick="showAddVajilla()">+ Nueva vajilla</button><button class="btn" onclick="exportVajillasExcel()">&#8595; Exportar</button></div>';
+  var vajKeys=Object.keys(vajillas).sort();
+  if(vajKeys.length===0){
+    html2+='<p style="font-size:12px;color:var(--text3)">No hay vajillas configuradas.</p>';
+  }else{
+    html2+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--bg3)">';
+    html2+='<th style="padding:7px 10px;text-align:left">Cod. Vajilla</th>';
+    html2+='<th style="padding:7px 10px;text-align:left">Descripcion</th>';
+    html2+='<th style="padding:7px 10px;text-align:right">&#10003; Sin reproceso</th>';
+    html2+='<th style="padding:7px 10px;text-align:right">&#9851; Con reproceso</th>';
+    html2+='<th style="padding:7px 10px;text-align:left">Limitante</th>';
+    html2+='<th style="padding:7px 10px;text-align:center">Acciones</th></tr></thead><tbody>';
+    vajKeys.forEach(function(cod){
+      var vaj=vajillas[cod];
+      var calc=calcVajillasDisponibles(cod);
+      var posD=calc.posiblesDirecto, posR=calc.posiblesConRepro;
+      var limitanteComp=calc.componentesDirecto.reduce(function(a,b){return a.posibles<=b.posibles?a:b;},{posibles:Infinity});
+      var limitante=limitanteComp&&limitanteComp.tn?limitanteComp.tn+' ('+limitanteComp.desc+')':'';
+      var rowColor=posD===0&&posR===0?'background:var(--al3-bg)':posD<5?'background:var(--al1-bg)':'';
+      html2+='<tr style="border-top:1px solid var(--border);'+rowColor+'">';
+      html2+='<td class="mono" style="padding:6px 10px;color:var(--bl-blue);font-size:10px;font-weight:600">'+cod+'</td>';
+      html2+='<td style="padding:6px 10px">'+vaj.desc+'</td>';
+      html2+='<td class="mono" style="padding:6px 10px;text-align:right;font-size:15px;font-weight:700;color:'+(posD===0?'var(--c-red)':posD<5?'var(--warn)':'var(--c-green)')+'">'+posD+'</td>';
+      html2+='<td class="mono" style="padding:6px 10px;text-align:right;font-size:13px;font-weight:600;color:'+(posR===0?'var(--c-red)':posR<5?'var(--warn)':'var(--bl-blue)')+'">'+posR+'</td>';
+      html2+='<td style="padding:6px 10px;font-size:10px;color:var(--text2)">'+limitante+'</td>';
+      html2+='<td style="padding:6px 10px;text-align:center;display:flex;gap:4px">';
+      html2+='<button class="btn" style="font-size:9px;padding:2px 7px" data-vaj="'+cod+'" onclick="toggleVajDetail(this.dataset.vaj)">&#9660; Detalle</button>';
+      html2+='<button class="btn" style="font-size:9px;padding:2px 7px;color:var(--c-red);border-color:var(--c-red)" data-vaj="'+cod+'" onclick="deleteVajilla(this.dataset.vaj)">x</button>';
+      html2+='</td></tr>';
+      // === DETAIL ROW ===
+      html2+='<tr id="vaj-detail-'+cod+'" style="display:none"><td colspan="6" style="padding:0">';
+      html2+='<div style="background:var(--bg2);padding:10px 20px;border-top:1px solid var(--border)">';
+      html2+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--bl-blue);margin-bottom:8px">Componentes y stock disponible</div>';
+      html2+='<table style="width:100%;border-collapse:collapse;font-size:10px"><thead><tr style="background:var(--bg3)">';
+      html2+='<th style="padding:4px 8px;text-align:left">TN</th>';
+      html2+='<th style="padding:4px 8px;text-align:left">Descripcion</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Qty</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Def.OK+Prov.OK</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Reserva defs.</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Sobrante</th>';
+      html2+='<th style="padding:4px 8px;text-align:center">% para vajilla (D)</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Disp. vajilla</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Prov.KO repro</th>';
+      html2+='<th style="padding:4px 8px;text-align:right">Posibles</th>';
+      html2+='</tr></thead><tbody>';
+      calc.componentesDirecto.forEach(function(c){
+        var isLimitante=c.posibles===posD;
+        var totalReserva=c.reservasDefs.reduce(function(s,r){return s+r.reservado;},0);
+        var pctActual=c.vajPct;
+        var provKOcomp=c.calc.provKO;
+        html2+='<tr style="border-top:1px solid var(--border)'+(isLimitante?';background:rgba(192,32,32,.05)':'')+'">';
+        html2+='<td class="mono" style="padding:4px 8px;color:var(--bl-blue);font-weight:600'+(isLimitante?';color:var(--c-red)':'')+' ">'+c.tn+'</td>';
+        html2+='<td style="padding:4px 8px">'+c.desc+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right">'+c.qty+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;color:var(--c-green)">'+fmtNum(c.calc.totalDirecto)+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;color:var(--bl-blue)">'+fmtNum(totalReserva)+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;color:var(--text2)">'+fmtNum(c.sobrante)+'</td>';
+        html2+='<td style="padding:4px 8px;text-align:center">';
+        html2+='<input type="number" min="0" max="100" value="'+pctActual+'" style="width:50px;text-align:center" data-tn="'+c.tn+'" oninput="setVajillaPct(this.dataset.tn,this.value);renderConfig()">';
+        html2+='<span style="font-size:9px;color:var(--text3)">%</span></td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;font-weight:600;color:'+(isLimitante?'var(--c-red)':'var(--c-green)')+'">'+fmtNum(c.disponible)+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;color:var(--warn)">'+fmtNum(provKOcomp)+'</td>';
+        html2+='<td class="mono" style="padding:4px 8px;text-align:right;font-weight:700;color:'+(isLimitante?'var(--c-red)':'var(--text2)')+'">'+c.posibles+'</td>';
+        html2+='</tr>';
+        // Show reservation detail per definitivo
+        if(c.reservasDefs&&c.reservasDefs.length>0){
+          html2+='<tr><td colspan="10" style="padding:2px 8px 6px 24px;background:rgba(26,75,140,.03)">';
+          html2+='<span style="font-size:9px;color:var(--text3)">Reservas: </span>';
+          c.reservasDefs.forEach(function(r){
+            html2+='<span style="font-size:9px;margin-right:10px;color:var(--text2)">'+r.mat.slice(-8)+': '+fmtNum(r.reservado)+'pz (necesita '+fmtNum(r.necesita)+')</span>';
+          });
+          html2+='</td></tr>';
+        }
+      });
+      html2+='</tbody></table></div></td></tr>';
+    });
+    html2+='</tbody></table>';
+  }
+  html2+='</div>';
+
+  // === STOCK DE SEGURIDAD ===
+  html2+='<div class="config-section"><h3>Stock de seguridad por articulo</h3>';
+  html2+='<div class="seg-toolbar"><input type="text" id="seg-search" placeholder="Buscar articulo..." style="width:200px" oninput="renderSegSearch(this.value)"><button class="btn btn-primary" onclick="addSegRow()">+ Anadir linea</button><button class="btn" onclick="exportSegExcel()">&#8595; Exportar</button></div>';
+  html2+='<div class="seg-grid" id="seg-grid">'+(Object.keys(stockSeguridad).length===0?'<div style="padding:16px;color:var(--text2);font-size:12px">No hay articulos anadidos.</div>':Object.keys(stockSeguridad).sort().map(function(mat){return segItemHtml(mat,mats[mat]||'');}).join(''))+'</div></div>';
+
+  // === IMPORTAR ===
+  html2+='<div class="config-section"><h3>Importar stock de seguridad</h3>';
+  html2+='<p style="font-size:12px;color:var(--text2);margin-bottom:10px">Pega desde Excel: Cod. Articulo, Descripcion, Qty, Pz</p>';
+  html2+='<div class="paste-area"><div class="paste-area-header"><span>Vista previa</span><button class="btn" style="margin-left:auto;font-size:11px;padding:3px 10px" onclick="addPasteRow()">+ Fila</button></div>';
+  html2+='<div class="paste-table-wrap"><table class="paste-table" id="paste-table"><thead><tr><th style="width:150px">Cod. Articulo</th><th>Descripcion</th><th style="width:90px">Qty</th><th style="width:80px">Pz</th><th style="width:30px"></th></tr></thead><tbody id="paste-tbody"></tbody></table></div></div>';
+  html2+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn btn-primary" onclick="applyPaste()">&#10004; Agregar a los datos</button><button class="btn" onclick="clearPaste()">Limpiar</button></div></div>';
+
+  document.getElementById('view-container').innerHTML=html2;
   renderPasteTable();
 }
+
 
 function segItemHtml(mat,desc){
   var seg=stockSeguridad[mat]||'';
@@ -1648,6 +1790,209 @@ function applyPaste(){
   alert(added+' articulo(s) aplicados al stock de seguridad.');
   pasteRows=[{mat:'',desc:'',qty:'',pz:''}];
   renderConfig();renderKPI();
+}
+
+
+function setRepartoManual(tn,mat,val){
+  if(!repartoManual[tn])repartoManual[tn]={};
+  var v=parseFloat(val);
+  if(!isNaN(v)&&v>=0&&v<=100)repartoManual[tn][mat]=v;
+  else delete repartoManual[tn][mat];
+}
+
+function resetRepartoTN(tn){
+  delete repartoManual[tn];
+  renderConfig();
+}
+
+function reasignarTodo(tn,mat){
+  var g={defs:[]};
+  getAZQ().forEach(function(a){if(a.tn===tn&&a.tipo==='DEFINITIVO'&&a.mto==='MTS')g.defs.push(a);});
+  if(!repartoManual[tn])repartoManual[tn]={};
+  g.defs.forEach(function(a){repartoManual[tn][a.mat]=a.mat===mat?100:0;});
+  renderConfig();
+}
+
+// Get provisionales assigned to a specific definitivo (used in cobertura calc)
+function getProvAsignados(tnGroups,tn,mat){
+  var g=tnGroups[tn]||{defs:[],provs:[]};
+  var provOK=g.provs.reduce(function(s,a){return s+a.ok;},0);
+  var provKO=g.provs.reduce(function(s,a){return s+a.ko;},0);
+  var rm=repartoManual[tn]||{};
+  var defs=g.defs.filter(function(d){return d.mto==='MTS';});
+  if(defs.length===0)return {ok:provOK,ko:provKO};
+  // Calculate % for this mat
+  var totalMedia=defs.reduce(function(s,a){return s+a.media;},0);
+  var pctManual=rm[mat];
+  var pct;
+  if(pctManual!==undefined){pct=pctManual/100;}
+  else{var a=defs.find(function(d){return d.mat===mat;});pct=totalMedia>0?(a?a.media/totalMedia:0):1/defs.length;}
+  return {ok:Math.round(provOK*pct),ko:Math.round(provKO*pct)};
+}
+
+function toggleVajDetail(cod){
+  var el=document.getElementById('vaj-detail-'+cod);
+  if(el)el.style.display=el.style.display==='table-row'?'none':'table-row';
+}
+
+function deleteVajilla(cod){
+  if(confirm('Eliminar vajilla '+cod+'?')){delete vajillas[cod];renderConfig();}
+}
+
+function showAddVajilla(){
+  var cod=prompt('Codigo del articulo vajilla (ej: 490450SVH021990):');
+  if(!cod||!cod.trim())return;
+  cod=cod.trim();
+  var desc=prompt('Descripcion de la vajilla:');
+  if(!desc)return;
+  vajillas[cod]={desc:desc.trim(),componentes:[]};
+  alert('Vajilla creada. Ve a Detalle para anadir los componentes (Trade Names).');
+  renderConfig();
+}
+
+function exportVajillasExcel(){
+  var rows=[['Cod. Vajilla','Descripcion','Trade Name comp.','Desc. componente','Qty/vajilla','Stock OK TN','Vajillas posibles']];
+  var stockByTN={};
+  getAZQ().forEach(function(a){if(!stockByTN[a.tn])stockByTN[a.tn]=0;stockByTN[a.tn]+=a.ok;});
+  Object.keys(vajillas).forEach(function(cod){
+    var vaj=vajillas[cod];
+    var minVaj=Infinity;
+    vaj.componentes.forEach(function(c){var st=stockByTN[c.tn]||0;var p=c.qty>0?Math.floor(st/c.qty):Infinity;if(p<minVaj)minVaj=p;});
+    if(minVaj===Infinity)minVaj=0;
+    vaj.componentes.forEach(function(c,i){
+      var st=stockByTN[c.tn]||0;
+      rows.push([i===0?cod:'',i===0?vaj.desc:'',c.tn,c.desc,c.qty,st,i===0?minVaj:'']);
+    });
+  });
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Vajillas');
+  XLSX.writeFile(wb,'Bormioli_Vajillas.xlsx');
+}
+
+
+
+// vajillaPct: { tn: pct } - % of sobrante to assign to vajillas (Option D)
+var vajillaPct = {};
+
+function setVajillaPct(tn, val) {
+  var v = parseFloat(val);
+  if (!isNaN(v) && v >= 0 && v <= 100) vajillaPct[tn] = v;
+  else delete vajillaPct[tn];
+}
+
+
+// ============================================================
+// VAJILLAS - STOCK CALCULATION
+// ============================================================
+
+// Calculate available stock for a given TN as a vajilla component
+// Returns: { directo, conReproceso, reservasDefs, detalle }
+function calcStockTNParaVajilla(tn) {
+  var tnData = { defs: [], provs: [] };
+  getAZQ().forEach(function(a) {
+    if (a.tn !== tn) return;
+    if (a.tipo === 'DEFINITIVO') tnData.defs.push(a);
+    else tnData.provs.push(a);
+  });
+
+  // Total directo: Def.OK + Prov.OK (both valid without reprocessing)
+  var defOK   = tnData.defs.reduce(function(s,a){ return s+a.ok; }, 0);
+  var defKO   = tnData.defs.reduce(function(s,a){ return s+a.ko; }, 0);
+  var provOK  = tnData.provs.reduce(function(s,a){ return s+a.ok; }, 0);
+  var provKO  = tnData.provs.reduce(function(s,a){ return s+a.ko; }, 0);
+  var totalDirecto = defOK + provOK;
+
+  // Sort definitivos by media DESC (highest sales priority first)
+  var defs = tnData.defs.slice().sort(function(a,b){ return b.media - a.media; });
+
+  // Reserve for each definitivo up to objective (Option C)
+  var stockRestante = totalDirecto;
+  var reservasDefs = [];
+  defs.forEach(function(a) {
+    var necesita = cobTargetMeses * a.media;
+    // Check manual override for this TN
+    var rm = repartoManual[tn] || {};
+    var pctManual = rm[a.mat];
+    var reserva;
+    if (pctManual !== undefined) {
+      // Manual: reserve this % of total directo
+      reserva = Math.round(totalDirecto * pctManual / 100);
+    } else {
+      // Option C: reserve up to objective, first come first served by sales
+      reserva = Math.min(stockRestante, necesita);
+    }
+    reserva = Math.max(0, reserva);
+    stockRestante -= reserva;
+    reservasDefs.push({ mat: a.mat, desc: a.desc, media: a.media, necesita: necesita, reservado: reserva });
+  });
+
+  var sobrante = Math.max(0, stockRestante);
+
+  // Check if there's a manual vajilla % override for this TN
+  var vajPct = vajillaPct[tn] !== undefined ? vajillaPct[tn] : 100; // default: all sobrante to vajilla
+  var disponibleVajilla = Math.round(sobrante * vajPct / 100);
+
+  // With reprocessing: also add Prov.KO sobrante
+  // Def.KO stays with its own definitivo only
+  var provKOSobrante = provKO; // all prov.KO can go to vajilla after reprocessing
+  var disponibleConRepro = disponibleVajilla + provKOSobrante;
+
+  return {
+    defOK: defOK, defKO: defKO, provOK: provOK, provKO: provKO,
+    totalDirecto: totalDirecto,
+    reservasDefs: reservasDefs,
+    sobrante: sobrante,
+    vajPct: vajPct,
+    disponibleVajilla: disponibleVajilla,
+    disponibleConRepro: disponibleConRepro
+  };
+}
+
+// Calculate how many complete vajillas can be assembled
+// Returns { posiblesDirecto, posiblesConRepro, componentesDirecto, componentesConRepro }
+function calcVajillasDisponibles(cod) {
+  var vaj = vajillas[cod];
+  if (!vaj) return { posiblesDirecto: 0, posiblesConRepro: 0 };
+
+  var minDirecto = Infinity;
+  var minConRepro = Infinity;
+  var componentesDirecto = [];
+  var componentesConRepro = [];
+
+  vaj.componentes.forEach(function(c) {
+    var calc = calcStockTNParaVajilla(c.tn);
+    var posD = c.qty > 0 ? Math.floor(calc.disponibleVajilla / c.qty) : Infinity;
+    var posR = c.qty > 0 ? Math.floor(calc.disponibleConRepro / c.qty) : Infinity;
+
+    if (posD < minDirecto) minDirecto = posD;
+    if (posR < minConRepro) minConRepro = posR;
+
+    componentesDirecto.push({
+      tn: c.tn, desc: c.desc, qty: c.qty,
+      disponible: calc.disponibleVajilla,
+      posibles: posD,
+      sobrante: calc.sobrante,
+      reservasDefs: calc.reservasDefs,
+      vajPct: calc.vajPct,
+      calc: calc
+    });
+    componentesConRepro.push({
+      tn: c.tn, desc: c.desc, qty: c.qty,
+      disponible: calc.disponibleConRepro,
+      posibles: posR,
+      provKO: calc.provKO
+    });
+  });
+
+  if (minDirecto === Infinity) minDirecto = 0;
+  if (minConRepro === Infinity) minConRepro = 0;
+
+  return {
+    posiblesDirecto: minDirecto,
+    posiblesConRepro: minConRepro,
+    componentesDirecto: componentesDirecto,
+    componentesConRepro: componentesConRepro
+  };
 }
 
 
